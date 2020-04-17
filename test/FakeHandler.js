@@ -1,27 +1,34 @@
-const MediaStreamTrack = require('node-mediastreamtrack');
-const EnhancedEventEmitter = require('../lib/EnhancedEventEmitter');
+const { EventEmitter } = require('events');
+const { FakeMediaStreamTrack } = require('fake-mediastreamtrack');
 const utils = require('../lib/utils');
 const ortc = require('../lib/ortc');
 const fakeParameters = require('./fakeParameters');
 
-const nativeRtpCapabilities = fakeParameters.generateNativeRtpCapabilities();
-const localDtlsParameters = fakeParameters.generateLocalDtlsParameters();
-
-class FakeHandler extends EnhancedEventEmitter
+class FakeHandler extends EventEmitter
 {
-	static async getNativeRtpCapabilities()
+	/**
+	 * Creates a factory function.
+	 */
+	static createFactory()
 	{
-		return nativeRtpCapabilities;
+		return () => new FakeHandler();
 	}
 
-	static async getNativeSctpCapabilities()
+	constructor()
 	{
-		return {
-			numStreams : 4096
-		};
+		super();
 	}
 
-	constructor(
+	get name()
+	{
+		return 'FakeHandler';
+	}
+
+	close()
+	{
+	}
+
+	run(
 		{
 			direction, // eslint-disable-line no-unused-vars
 			iceParameters, // eslint-disable-line no-unused-vars
@@ -35,8 +42,6 @@ class FakeHandler extends EnhancedEventEmitter
 		}
 	)
 	{
-		super();
-
 		// Generic sending RTP parameters for audio and video.
 		// @type {Object}
 		this._rtpParametersByKind =
@@ -58,7 +63,7 @@ class FakeHandler extends EnhancedEventEmitter
 		this._nextLocalId = 1;
 
 		// Sending and receiving tracks indexed by localId.
-		// @type {Map<Number, MediaStreamTrack>}
+		// @type {Map<Number, FakeMediaStreamTrack>}
 		this._tracks = new Map();
 
 		// DataChannel id value counter. It must be incremented for each new DataChannel.
@@ -66,32 +71,38 @@ class FakeHandler extends EnhancedEventEmitter
 		this._nextSctpStreamId = 0;
 	}
 
-	close()
-	{
-	}
-
-	// For simulation purposes.
+	// NOTE: Custom method for simulation purposes.
 	setConnectionState(connectionState)
 	{
 		this.emit('@connectionstatechange', connectionState);
 	}
 
+	async getNativeRtpCapabilities()
+	{
+		return fakeParameters.generateNativeRtpCapabilities();
+	}
+
+	async getNativeSctpCapabilities()
+	{
+		return fakeParameters.generateNativeSctpCapabilities();
+	}
+
+	async updateIceServers(iceServers) // eslint-disable-line no-unused-vars
+	{
+		return;
+	}
+
+	async restartIce(iceParameters) // eslint-disable-line no-unused-vars
+	{
+		return;
+	}
+
 	async getTransportStats()
 	{
-		return new Map();
+		return new Map(); // NOTE: Whatever.
 	}
 
-	async restartIce({ iceParameters } = {}) // eslint-disable-line no-unused-vars
-	{
-		return;
-	}
-
-	async updateIceServers({ iceServers }) // eslint-disable-line no-unused-vars
-	{
-		return;
-	}
-
-	async send({ track, encodings }) // eslint-disable-line no-unused-vars
+	async send({ track, encodings, codecOptions }) // eslint-disable-line no-unused-vars
 	{
 		if (!this._transportReady)
 			await this._setupTransport({ localDtlsRole: 'server' });
@@ -131,7 +142,7 @@ class FakeHandler extends EnhancedEventEmitter
 		return { localId, rtpParameters };
 	}
 
-	async stopSending({ localId })
+	async stopSending(localId)
 	{
 		if (!this._tracks.has(localId))
 			throw new Error('local track not found');
@@ -139,15 +150,25 @@ class FakeHandler extends EnhancedEventEmitter
 		this._tracks.delete(localId);
 	}
 
-	async replaceTrack({ localId, track })
+	async replaceTrack(localId, track)
 	{
 		this._tracks.delete(localId);
 		this._tracks.set(localId, track);
 	}
 
-	async getSenderStats({ track }) // eslint-disable-line no-unused-vars
+	// eslint-disable-next-line no-unused-vars
+	async setMaxSpatialLayer(localId, spatialLayer)
 	{
-		return new Map();
+	}
+
+	// eslint-disable-next-line no-unused-vars
+	async setRtpEncodingParameters(localId, params)
+	{
+	}
+
+	async getSenderStats(localId) // eslint-disable-line no-unused-vars
+	{
+		return new Map(); // NOTE: Whatever.
 	}
 
 	async sendDataChannel(
@@ -187,32 +208,27 @@ class FakeHandler extends EnhancedEventEmitter
 		return { dataChannel, sctpStreamParameters };
 	}
 
-	// eslint-disable-next-line no-unused-vars
-	async setMaxSpatialLayer({ localId, spatialLayer })
-	{
-	}
-
-	async receive({ id, kind, rtpParameters }) // eslint-disable-line no-unused-vars
+	async receive({ trackId, kind, rtpParameters }) // eslint-disable-line no-unused-vars
 	{
 		if (!this._transportReady)
 			await this._setupTransport({ localDtlsRole: 'client' });
 
 		const localId = this._nextLocalId++;
-		const track = new MediaStreamTrack({ kind });
+		const track = new FakeMediaStreamTrack({ kind });
 
 		this._tracks.set(localId, track);
 
 		return { localId, track };
 	}
 
-	async stopReceiving({ localId })
+	async stopReceiving(localId)
 	{
 		this._tracks.delete(localId);
 	}
 
-	async getReceiverStats({ localId }) // eslint-disable-line no-unused-vars
+	async getReceiverStats(localId) // eslint-disable-line no-unused-vars
 	{
-		return new Map();
+		return new Map(); //
 	}
 
 	async receiveDataChannel({ sctpStreamParameters, label, protocol })
@@ -237,17 +253,22 @@ class FakeHandler extends EnhancedEventEmitter
 
 	async _setupTransport({ localDtlsRole } = {})
 	{
-		const dtlsParameters = utils.clone(localDtlsParameters);
+		const dtlsParameters = utils.clone(fakeParameters.generateLocalDtlsParameters());
 
 		// Set our DTLS role.
 		if (localDtlsRole)
 			dtlsParameters.role = localDtlsRole;
 
+		// Assume we are connecting now.
+		this.emit('@connectionstatechange', 'connecting');
+
 		// Need to tell the remote transport about our parameters.
-		await this.safeEmitAsPromise('@connect', { dtlsParameters });
+		await new Promise((resolve, reject) => (
+			this.emit('@connect', { dtlsParameters }, resolve, reject)
+		));
 
 		this._transportReady = true;
 	}
 }
 
-module.exports = FakeHandler;
+exports.FakeHandler = FakeHandler;

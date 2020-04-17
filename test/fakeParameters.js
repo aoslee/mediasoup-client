@@ -8,11 +8,14 @@ exports.generateRouterRtpCapabilities = function()
 			{
 				mimeType             : 'audio/opus',
 				kind                 : 'audio',
-				clockRate            : 48000,
 				preferredPayloadType : 100,
+				clockRate            : 48000,
 				channels             : 2,
-				rtcpFeedback         : [],
-				parameters           :
+				rtcpFeedback         :
+				[
+					{ type: 'transport-cc' }
+				],
+				parameters :
 				{
 					useinbandfec : 1,
 					foo          : 'bar'
@@ -21,14 +24,15 @@ exports.generateRouterRtpCapabilities = function()
 			{
 				mimeType             : 'video/VP8',
 				kind                 : 'video',
-				clockRate            : 90000,
 				preferredPayloadType : 101,
+				clockRate            : 90000,
 				rtcpFeedback         :
 				[
 					{ type: 'nack' },
 					{ type: 'nack', parameter: 'pli' },
 					{ type: 'ccm', parameter: 'fir' },
-					{ type: 'goog-remb' }
+					{ type: 'goog-remb' },
+					{ type: 'transport-cc' }
 				],
 				parameters :
 				{
@@ -38,8 +42,8 @@ exports.generateRouterRtpCapabilities = function()
 			{
 				mimeType             : 'video/rtx',
 				kind                 : 'video',
-				clockRate            : 90000,
 				preferredPayloadType : 102,
+				clockRate            : 90000,
 				rtcpFeedback         : [],
 				parameters           :
 				{
@@ -49,14 +53,15 @@ exports.generateRouterRtpCapabilities = function()
 			{
 				mimeType             : 'video/H264',
 				kind                 : 'video',
-				clockRate            : 90000,
 				preferredPayloadType : 103,
+				clockRate            : 90000,
 				rtcpFeedback         :
 				[
 					{ type: 'nack' },
 					{ type: 'nack', parameter: 'pli' },
 					{ type: 'ccm', parameter: 'fir' },
-					{ type: 'goog-remb' }
+					{ type: 'goog-remb' },
+					{ type: 'transport-cc' }
 				],
 				parameters :
 				{
@@ -68,8 +73,8 @@ exports.generateRouterRtpCapabilities = function()
 			{
 				mimeType             : 'video/rtx',
 				kind                 : 'video',
-				clockRate            : 90000,
 				preferredPayloadType : 104,
+				clockRate            : 90000,
 				rtcpFeedback         : [],
 				parameters           :
 				{
@@ -81,51 +86,94 @@ exports.generateRouterRtpCapabilities = function()
 		[
 			{
 				kind             : 'audio',
-				uri              : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+				uri              : 'urn:ietf:params:rtp-hdrext:sdes:mid',
 				preferredId      : 1,
-				preferredEncrypt : false
-			},
-			{
-				kind             : 'video',
-				uri              : 'urn:ietf:params:rtp-hdrext:toffset',
-				preferredId      : 2,
-				preferredEncrypt : false
-			},
-			{
-				kind             : 'audio',
-				uri              : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time', // eslint-disable-line max-len
-				preferredId      : 3,
-				preferredEncrypt : false
-			},
-			{
-				kind             : 'video',
-				uri              : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time', // eslint-disable-line max-len
-				preferredId      : 3,
-				preferredEncrypt : false
-			},
-			{
-				kind             : 'video',
-				uri              : 'urn:3gpp:video-orientation',
-				preferredId      : 4,
-				preferredEncrypt : false
-			},
-			{
-				kind             : 'audio',
-				uri              : 'urn:ietf:params:rtp-hdrext:sdes:mid',
-				preferredId      : 5,
-				preferredEncrypt : false
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
 			},
 			{
 				kind             : 'video',
 				uri              : 'urn:ietf:params:rtp-hdrext:sdes:mid',
-				preferredId      : 5,
-				preferredEncrypt : false
+				preferredId      : 1,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
 			},
 			{
 				kind             : 'video',
 				uri              : 'urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id',
+				preferredId      : 2,
+				preferredEncrypt : false,
+				direction        : 'recvonly'
+			},
+			{
+				kind             : 'video',
+				uri              : 'urn:ietf:params:rtp-hdrext:sdes:repaired-rtp-stream-id',
+				preferredId      : 3,
+				preferredEncrypt : false,
+				direction        : 'recvonly'
+			},
+			{
+				kind             : 'audio',
+				uri              : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time',
+				preferredId      : 4,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
+			},
+			{
+				kind             : 'video',
+				uri              : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time',
+				preferredId      : 4,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
+			},
+			{
+				kind             : 'audio',
+				uri              : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+				preferredId      : 5,
+				preferredEncrypt : false,
+				direction        : 'recvonly'
+			},
+			{
+				kind             : 'video',
+				uri              : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+				preferredId      : 5,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
+			},
+			{
+				kind             : 'video',
+				uri              : 'http://tools.ietf.org/html/draft-ietf-avtext-framemarking-07',
 				preferredId      : 6,
-				preferredEncrypt : false
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
+			},
+			{
+				kind             : 'video',
+				uri              : 'urn:ietf:params:rtp-hdrext:framemarking',
+				preferredId      : 7,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
+			},
+			{
+				kind             : 'audio',
+				uri              : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+				preferredId      : 10,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
+			},
+			{
+				kind             : 'video',
+				uri              : 'urn:3gpp:video-orientation',
+				preferredId      : 11,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
+			},
+			{
+				kind             : 'video',
+				uri              : 'urn:ietf:params:rtp-hdrext:toffset',
+				preferredId      : 12,
+				preferredEncrypt : false,
+				direction        : 'sendrecv'
 			}
 		],
 		fecMechanisms : []
@@ -140,8 +188,8 @@ exports.generateNativeRtpCapabilities = function()
 			{
 				mimeType             : 'audio/opus',
 				kind                 : 'audio',
-				clockRate            : 48000,
 				preferredPayloadType : 111,
+				clockRate            : 48000,
 				channels             : 2,
 				rtcpFeedback         :
 				[
@@ -156,26 +204,32 @@ exports.generateNativeRtpCapabilities = function()
 			{
 				mimeType             : 'audio/ISAC',
 				kind                 : 'audio',
-				clockRate            : 16000,
 				preferredPayloadType : 103,
+				clockRate            : 16000,
 				channels             : 1,
-				rtcpFeedback         : [],
-				parameters           : {}
+				rtcpFeedback         :
+				[
+					{ type: 'transport-cc' }
+				],
+				parameters : {}
 			},
 			{
 				mimeType             : 'audio/CN',
 				kind                 : 'audio',
-				clockRate            : 32000,
 				preferredPayloadType : 106,
+				clockRate            : 32000,
 				channels             : 1,
-				rtcpFeedback         : [],
-				parameters           : {}
+				rtcpFeedback         :
+				[
+					{ type: 'transport-cc' }
+				],
+				parameters : {}
 			},
 			{
 				mimeType             : 'video/VP8',
 				kind                 : 'video',
-				clockRate            : 90000,
 				preferredPayloadType : 96,
+				clockRate            : 90000,
 				rtcpFeedback         :
 				[
 					{ type: 'goog-remb' },
@@ -192,8 +246,8 @@ exports.generateNativeRtpCapabilities = function()
 			{
 				mimeType             : 'video/rtx',
 				kind                 : 'video',
-				clockRate            : 90000,
 				preferredPayloadType : 97,
+				clockRate            : 90000,
 				rtcpFeedback         : [],
 				parameters           :
 				{
@@ -205,13 +259,13 @@ exports.generateNativeRtpCapabilities = function()
 		[
 			{
 				kind        : 'audio',
-				uri         : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
-				preferredId : 10
+				uri         : 'urn:ietf:params:rtp-hdrext:sdes:mid',
+				preferredId : 1
 			},
 			{
-				kind        : 'audio',
+				kind        : 'video',
 				uri         : 'urn:ietf:params:rtp-hdrext:sdes:mid',
-				preferredId : 9
+				preferredId : 1
 			},
 			{
 				kind        : 'video',
@@ -249,9 +303,9 @@ exports.generateNativeRtpCapabilities = function()
 				preferredId : 8
 			},
 			{
-				kind        : 'video',
-				uri         : 'urn:ietf:params:rtp-hdrext:sdes:mid',
-				preferredId : 9
+				kind        : 'audio',
+				uri         : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+				preferredId : 10
 			}
 		],
 		fecMechanisms : []
@@ -361,11 +415,14 @@ exports.generateConsumerRemoteParameters = function({ id, codecMimeType } = {})
 					[
 						{
 							mimeType     : 'audio/opus',
-							clockRate    : 48000,
 							payloadType  : 100,
+							clockRate    : 48000,
 							channels     : 2,
-							rtcpFeedback : [],
-							parameters   :
+							rtcpFeedback :
+							[
+								{ type: 'transport-cc' }
+							],
+							parameters :
 							{
 								useinbandfec : 1,
 								foo          : 'bar'
@@ -381,8 +438,16 @@ exports.generateConsumerRemoteParameters = function({ id, codecMimeType } = {})
 					headerExtensions :
 					[
 						{
-							uri : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+							uri : 'urn:ietf:params:rtp-hdrext:sdes:mid',
 							id  : 1
+						},
+						{
+							uri : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+							id  : 5
+						},
+						{
+							uri : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+							id  : 10
 						}
 					],
 					rtcp :
@@ -407,11 +472,14 @@ exports.generateConsumerRemoteParameters = function({ id, codecMimeType } = {})
 					[
 						{
 							mimeType     : 'audio/ISAC',
-							clockRate    : 16000,
 							payloadType  : 111,
+							clockRate    : 16000,
 							channels     : 1,
-							rtcpFeedback : [],
-							parameters   : {}
+							rtcpFeedback :
+							[
+								{ type: 'transport-cc' }
+							],
+							parameters : {}
 						}
 					],
 					encodings :
@@ -423,8 +491,12 @@ exports.generateConsumerRemoteParameters = function({ id, codecMimeType } = {})
 					headerExtensions :
 					[
 						{
-							uri : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+							uri : 'urn:ietf:params:rtp-hdrext:sdes:mid',
 							id  : 1
+						},
+						{
+							uri : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+							id  : 5
 						}
 					],
 					rtcp :
@@ -449,14 +521,15 @@ exports.generateConsumerRemoteParameters = function({ id, codecMimeType } = {})
 					[
 						{
 							mimeType     : 'video/VP8',
-							clockRate    : 90000,
 							payloadType  : 101,
+							clockRate    : 90000,
 							rtcpFeedback :
 							[
 								{ type: 'nack' },
 								{ type: 'nack', parameter: 'pli' },
 								{ type: 'ccm', parameter: 'fir' },
-								{ type: 'goog-remb' }
+								{ type: 'goog-remb' },
+								{ type: 'transport-cc' }
 							],
 							parameters :
 							{
@@ -465,8 +538,8 @@ exports.generateConsumerRemoteParameters = function({ id, codecMimeType } = {})
 						},
 						{
 							mimeType     : 'video/rtx',
-							clockRate    : 90000,
 							payloadType  : 102,
+							clockRate    : 90000,
 							rtcpFeedback : [],
 							parameters   :
 							{
@@ -487,16 +560,24 @@ exports.generateConsumerRemoteParameters = function({ id, codecMimeType } = {})
 					headerExtensions :
 					[
 						{
-							uri : 'urn:ietf:params:rtp-hdrext:toffset',
-							id  : 2
+							uri : 'urn:ietf:params:rtp-hdrext:sdes:mid',
+							id  : 1
 						},
 						{
-							uri : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time', // eslint-disable-line max-len
-							id  : 3
+							uri : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time',
+							id  : 4
+						},
+						{
+							uri : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+							id  : 5
 						},
 						{
 							uri : 'urn:3gpp:video-orientation',
-							id  : 4
+							id  : 11
+						},
+						{
+							uri : 'urn:ietf:params:rtp-hdrext:toffset',
+							id  : 12
 						}
 					],
 					rtcp :
@@ -531,7 +612,6 @@ exports.generateDataConsumerRemoteParameters = function({ id } = {})
 		sctpStreamParameters :
 		{
 			streamId          : 666,
-			ordered           : true,
 			maxPacketLifeTime : 5000,
 			maxRetransmits    : undefined
 		}

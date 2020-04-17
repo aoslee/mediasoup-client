@@ -4,14 +4,13 @@
  */
 
 const { toBeType } = require('jest-tobetype');
-const MediaStreamTrack = require('node-mediastreamtrack');
+const { FakeMediaStreamTrack } = require('fake-mediastreamtrack');
 const pkg = require('../package.json');
 const mediasoupClient = require('../');
-const mediasoupInternals = require('../lib/internals');
-const { version, Device, parseScalabilityMode } = mediasoupClient;
-const { UnsupportedError, InvalidStateError } = mediasoupInternals.errors;
+const { version, Device, detectDevice, parseScalabilityMode } = mediasoupClient;
+const { UnsupportedError, InvalidStateError } = mediasoupClient.types;
 const utils = require('../lib/utils');
-const FakeHandler = require('./FakeHandler');
+const { FakeHandler } = require('./FakeHandler');
 const fakeParameters = require('./fakeParameters');
 
 expect.extend({ toBeType });
@@ -32,21 +31,26 @@ test('mediasoup-client exposes a version property', () =>
 	expect(version).toBe(pkg.version);
 }, 500);
 
-test('create a Device in Node without custom Handler throws UnsupportedError', () =>
+test('detectDevice() returns nothing in Node', () =>
+{
+	expect(detectDevice()).toBe(undefined);
+}, 500);
+
+test('create a Device in Node without custom handlerName/handlerFactory throws UnsupportedError', () =>
 {
 	expect(() => new Device())
 		.toThrow(UnsupportedError);
 }, 500);
 
-test('create a Device with an unknown Handler string throws TypeError', () =>
+test('create a Device with an unknown handlerName string throws TypeError', () =>
 {
-	expect(() => new Device({ Handler: 'FooBrowser666' }))
+	expect(() => new Device({ handlerName: 'FooBrowser666' }))
 		.toThrow(TypeError);
 }, 500);
 
-test('create a Device in Node with a FakeHandler succeeds', () =>
+test('create a Device in Node with a valid handlerFactory succeeds', () =>
 {
-	expect(device = new Device({ Handler: FakeHandler }))
+	expect(device = new Device({ handlerFactory: FakeHandler.createFactory() }))
 		.toBeType('object');
 
 	expect(device.handlerName).toBe('FakeHandler');
@@ -94,7 +98,7 @@ test('device.createSendTransport() throws InvalidStateError if not loaded', () =
 
 test('device.load() without routerRtpCapabilities rejects with TypeError', async () =>
 {
-	await expect(device.load())
+	await expect(device.load({}))
 		.rejects
 		.toThrow(TypeError);
 
@@ -133,7 +137,7 @@ test('device.load() succeeds', async () =>
 
 test('device.load() rejects with InvalidStateError if already loaded', async () =>
 {
-	await expect(device.load())
+	await expect(device.load({}))
 		.rejects
 		.toThrow(InvalidStateError);
 
@@ -188,6 +192,7 @@ test('device.createSendTransport() for sending media succeeds', () =>
 	expect(sendTransport.closed).toBe(false);
 	expect(sendTransport.direction).toBe('send');
 	expect(sendTransport.handler).toBeType('object');
+	expect(sendTransport.handler instanceof FakeHandler).toBe(true);
 	expect(sendTransport.connectionState).toBe('new');
 	expect(sendTransport.appData).toEqual({ baz: 'BAZ' }, 500);
 }, 500);
@@ -217,6 +222,7 @@ test('device.createRecvTransport() for receiving media succeeds', () =>
 	expect(recvTransport.closed).toBe(false);
 	expect(recvTransport.direction).toBe('recv');
 	expect(recvTransport.handler).toBeType('object');
+	expect(recvTransport.handler instanceof FakeHandler).toBe(true);
 	expect(recvTransport.connectionState).toBe('new');
 	expect(recvTransport.appData).toEqual({});
 }, 500);
@@ -260,10 +266,19 @@ test('device.createRecvTransport() with a non object appData throws TypeError', 
 		.toThrow(TypeError);
 }, 500);
 
+test('transport.produce() without "connect" listener rejects', async () =>
+{
+	const audioTrack = new FakeMediaStreamTrack({ kind: 'audio' });
+
+	await expect(sendTransport.produce({ track: audioTrack }))
+		.rejects
+		.toThrow(Error);
+}, 500);
+
 test('transport.produce() succeeds', async () =>
 {
-	const audioTrack = new MediaStreamTrack({ kind: 'audio' });
-	const videoTrack = new MediaStreamTrack({ kind: 'video' });
+	const audioTrack = new FakeMediaStreamTrack({ kind: 'audio' });
+	const videoTrack = new FakeMediaStreamTrack({ kind: 'video' });
 	let audioProducerId;
 	let videoProducerId;
 	let connectEventNumTimesCalled = 0;
@@ -332,8 +347,9 @@ test('transport.produce() succeeds', async () =>
 	// Pause the audio track before creating its Producer.
 	audioTrack.enabled = false;
 
+	// Use stopTracks: false.
 	audioProducer = await sendTransport.produce(
-		{ track: audioTrack, appData: { foo: 'FOO' } });
+		{ track: audioTrack, stopTracks: false, appData: { foo: 'FOO' } });
 
 	expect(connectEventNumTimesCalled).toBe(1);
 	expect(produceEventNumTimesCalled).toBe(1);
@@ -350,11 +366,14 @@ test('transport.produce() succeeds', async () =>
 	expect(codecs[0]).toEqual(
 		{
 			mimeType     : 'audio/opus',
-			clockRate    : 48000,
 			payloadType  : 111,
+			clockRate    : 48000,
 			channels     : 2,
-			rtcpFeedback : [],
-			parameters   :
+			rtcpFeedback :
+			[
+				{ type: 'transport-cc', parameter: '' }
+			],
+			parameters :
 			{
 				minptime     : 10,
 				useinbandfec : 1
@@ -365,12 +384,16 @@ test('transport.produce() succeeds', async () =>
 	expect(headerExtensions).toEqual(
 		[
 			{
-				uri : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
-				id  : 10
+				uri        : 'urn:ietf:params:rtp-hdrext:sdes:mid',
+				id         : 1,
+				encrypt    : false,
+				parameters : {}
 			},
 			{
-				uri : 'urn:ietf:params:rtp-hdrext:sdes:mid',
-				id  : 9
+				uri        : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+				id         : 10,
+				encrypt    : false,
+				parameters : {}
 			}
 		]);
 
@@ -378,7 +401,7 @@ test('transport.produce() succeeds', async () =>
 	expect(encodings).toBeType('array');
 	expect(encodings.length).toBe(1);
 	expect(encodings[0]).toBeType('object');
-	expect(Object.keys(encodings[0])).toEqual([ 'ssrc' ]);
+	expect(Object.keys(encodings[0])).toEqual([ 'ssrc', 'dtx' ]);
 	expect(encodings[0].ssrc).toBeType('number');
 
 	rtcp = audioProducer.rtpParameters.rtcp;
@@ -398,8 +421,15 @@ test('transport.produce() succeeds', async () =>
 		{ maxBitrate: 500000 }
 	];
 
+	// Note that stopTracks is not give so it's true by default.
+	// Use disableTrackOnPause: false and zeroRtpOnPause: true
 	videoProducer = await sendTransport.produce(
-		{ track: videoTrack, encodings: videoEncodings });
+		{
+			track               : videoTrack,
+			encodings           : videoEncodings,
+			disableTrackOnPause : false,
+			zeroRtpOnPause      : true
+		});
 
 	expect(connectEventNumTimesCalled).toBe(1);
 	expect(produceEventNumTimesCalled).toBe(2);
@@ -416,13 +446,14 @@ test('transport.produce() succeeds', async () =>
 	expect(codecs[0]).toEqual(
 		{
 			mimeType     : 'video/VP8',
-			clockRate    : 90000,
 			payloadType  : 96,
+			clockRate    : 90000,
 			rtcpFeedback :
 			[
-				{ type: 'goog-remb' },
+				{ type: 'goog-remb', parameter: '' },
+				{ type: 'transport-cc', parameter: '' },
 				{ type: 'ccm', parameter: 'fir' },
-				{ type: 'nack' },
+				{ type: 'nack', parameter: '' },
 				{ type: 'nack', parameter: 'pli' }
 			],
 			parameters :
@@ -433,8 +464,8 @@ test('transport.produce() succeeds', async () =>
 	expect(codecs[1]).toEqual(
 		{
 			mimeType     : 'video/rtx',
-			clockRate    : 90000,
 			payloadType  : 97,
+			clockRate    : 90000,
 			rtcpFeedback : [],
 			parameters   :
 			{
@@ -446,20 +477,34 @@ test('transport.produce() succeeds', async () =>
 	expect(headerExtensions).toEqual(
 		[
 			{
-				uri : 'urn:ietf:params:rtp-hdrext:toffset',
-				id  : 2
+				uri        : 'urn:ietf:params:rtp-hdrext:sdes:mid',
+				id         : 1,
+				encrypt    : false,
+				parameters : {}
 			},
 			{
-				uri : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time',
-				id  : 3
+				uri        : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time',
+				id         : 3,
+				encrypt    : false,
+				parameters : {}
 			},
 			{
-				uri : 'urn:3gpp:video-orientation',
-				id  : 4
+				uri        : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+				id         : 5,
+				encrypt    : false,
+				parameters : {}
 			},
 			{
-				uri : 'urn:ietf:params:rtp-hdrext:sdes:mid',
-				id  : 9
+				uri        : 'urn:3gpp:video-orientation',
+				id         : 4,
+				encrypt    : false,
+				parameters : {}
+			},
+			{
+				uri        : 'urn:ietf:params:rtp-hdrext:toffset',
+				id         : 2,
+				encrypt    : false,
+				parameters : {}
 			}
 		]);
 
@@ -485,19 +530,20 @@ test('transport.produce() succeeds', async () =>
 	expect(videoProducer.maxSpatialLayer).toBe(undefined);
 	expect(videoProducer.appData).toEqual({});
 
-	sendTransport.removeAllListeners();
+	sendTransport.removeAllListeners('connect');
+	sendTransport.removeAllListeners('produce');
 }, 500);
 
 test('transport.produce() without track rejects with TypeError', async () =>
 {
-	await expect(sendTransport.produce())
+	await expect(sendTransport.produce({}))
 		.rejects
 		.toThrow(TypeError);
 }, 500);
 
 test('transport.produce() in a receiving Transport rejects with UnsupportedError', async () =>
 {
-	const track = new MediaStreamTrack({ kind: 'audio' });
+	const track = new FakeMediaStreamTrack({ kind: 'audio' });
 
 	await expect(recvTransport.produce({ track }))
 		.rejects
@@ -506,7 +552,7 @@ test('transport.produce() in a receiving Transport rejects with UnsupportedError
 
 test('transport.produce() with an ended track rejects with InvalidStateError', async () =>
 {
-	const track = new MediaStreamTrack({ kind: 'audio' });
+	const track = new FakeMediaStreamTrack({ kind: 'audio' });
 
 	track.stop();
 
@@ -517,7 +563,7 @@ test('transport.produce() with an ended track rejects with InvalidStateError', a
 
 test('transport.produce() with a non object appData rejects with TypeError', async () =>
 {
-	const track = new MediaStreamTrack({ kind: 'audio' });
+	const track = new FakeMediaStreamTrack({ kind: 'audio' });
 
 	await expect(sendTransport.produce({ track, appData: true }))
 		.rejects
@@ -573,11 +619,14 @@ test('transport.consume() succeeds', async () =>
 	expect(codecs[0]).toEqual(
 		{
 			mimeType     : 'audio/opus',
-			clockRate    : 48000,
 			payloadType  : 100,
+			clockRate    : 48000,
 			channels     : 2,
-			rtcpFeedback : [],
-			parameters   :
+			rtcpFeedback :
+			[
+				{ type: 'transport-cc', parameter: '' }
+			],
+			parameters :
 			{
 				useinbandfec : 1,
 				foo          : 'bar'
@@ -588,8 +637,22 @@ test('transport.consume() succeeds', async () =>
 	expect(headerExtensions).toEqual(
 		[
 			{
-				uri : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
-				id  : 1
+				uri        : 'urn:ietf:params:rtp-hdrext:sdes:mid',
+				id         : 1,
+				encrypt    : false,
+				parameters : {}
+			},
+			{
+				uri        : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+				id         : 5,
+				encrypt    : false,
+				parameters : {}
+			},
+			{
+				uri        : 'urn:ietf:params:rtp-hdrext:ssrc-audio-level',
+				id         : 10,
+				encrypt    : false,
+				parameters : {}
 			}
 		]);
 
@@ -597,7 +660,7 @@ test('transport.consume() succeeds', async () =>
 	expect(encodings).toBeType('array');
 	expect(encodings.length).toBe(1);
 	expect(encodings[0]).toBeType('object');
-	expect(Object.keys(encodings[0])).toEqual([ 'ssrc' ]);
+	expect(Object.keys(encodings[0])).toEqual([ 'ssrc', 'dtx' ]);
 	expect(encodings[0].ssrc).toBeType('number');
 
 	rtcp = audioProducer.rtpParameters.rtcp;
@@ -630,14 +693,15 @@ test('transport.consume() succeeds', async () =>
 	expect(codecs[0]).toEqual(
 		{
 			mimeType     : 'video/VP8',
-			clockRate    : 90000,
 			payloadType  : 101,
+			clockRate    : 90000,
 			rtcpFeedback :
 			[
-				{ type: 'nack' },
+				{ type: 'nack', parameter: '' },
 				{ type: 'nack', parameter: 'pli' },
 				{ type: 'ccm', parameter: 'fir' },
-				{ type: 'goog-remb' }
+				{ type: 'goog-remb', parameter: '' },
+				{ type: 'transport-cc', parameter: '' }
 			],
 			parameters :
 			{
@@ -647,8 +711,8 @@ test('transport.consume() succeeds', async () =>
 	expect(codecs[1]).toEqual(
 		{
 			mimeType     : 'video/rtx',
-			clockRate    : 90000,
 			payloadType  : 102,
+			clockRate    : 90000,
 			rtcpFeedback : [],
 			parameters   :
 			{
@@ -660,16 +724,34 @@ test('transport.consume() succeeds', async () =>
 	expect(headerExtensions).toEqual(
 		[
 			{
-				uri : 'urn:ietf:params:rtp-hdrext:toffset',
-				id  : 2
+				uri        : 'urn:ietf:params:rtp-hdrext:sdes:mid',
+				id         : 1,
+				encrypt    : false,
+				parameters : {}
 			},
 			{
-				uri : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time',
-				id  : 3
+				uri        : 'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time',
+				id         : 4,
+				encrypt    : false,
+				parameters : {}
 			},
 			{
-				uri : 'urn:3gpp:video-orientation',
-				id  : 4
+				uri        : 'http://www.ietf.org/id/draft-holmer-rmcat-transport-wide-cc-extensions-01',
+				id         : 5,
+				encrypt    : false,
+				parameters : {}
+			},
+			{
+				uri        : 'urn:3gpp:video-orientation',
+				id         : 11,
+				encrypt    : false,
+				parameters : {}
+			},
+			{
+				uri        : 'urn:ietf:params:rtp-hdrext:toffset',
+				id         : 12,
+				encrypt    : false,
+				parameters : {}
 			}
 		]);
 
@@ -677,7 +759,7 @@ test('transport.consume() succeeds', async () =>
 	expect(encodings).toBeType('array');
 	expect(encodings.length).toBe(1);
 	expect(encodings[0]).toBeType('object');
-	expect(Object.keys(encodings[0])).toEqual([ 'ssrc', 'rtx' ]);
+	expect(Object.keys(encodings[0])).toEqual([ 'ssrc', 'rtx', 'dtx' ]);
 	expect(encodings[0].ssrc).toBeType('number');
 	expect(encodings[0].rtx).toBeType('object');
 	expect(Object.keys(encodings[0].rtx)).toEqual([ 'ssrc' ]);
@@ -690,12 +772,12 @@ test('transport.consume() succeeds', async () =>
 	expect(videoConsumer.paused).toBe(false);
 	expect(videoConsumer.appData).toEqual({});
 
-	recvTransport.removeAllListeners();
+	recvTransport.removeAllListeners('connect');
 }, 500);
 
 test('transport.consume() without remote Consumer parameters rejects with TypeError', async () =>
 {
-	await expect(recvTransport.consume())
+	await expect(recvTransport.consume({}))
 		.rejects
 		.toThrow(TypeError);
 }, 500);
@@ -824,12 +906,12 @@ test('transport.produceData() succeeds', async () =>
 	expect(dataProducer.label).toBe('FOO');
 	expect(dataProducer.protocol).toBe('BAR');
 
-	sendTransport.removeAllListeners();
+	sendTransport.removeAllListeners('producedata');
 }, 500);
 
 test('transport.produceData() in a receiving Transport rejects with UnsupportedError', async () =>
 {
-	await expect(recvTransport.produceData())
+	await expect(recvTransport.produceData({}))
 		.rejects
 		.toThrow(UnsupportedError);
 }, 500);
@@ -868,7 +950,7 @@ test('transport.consumeData() succeeds', async () =>
 
 test('transport.consumeData() without remote DataConsumer parameters rejects with TypeError', async () =>
 {
-	await expect(recvTransport.consumeData())
+	await expect(recvTransport.consumeData({}))
 		.rejects
 		.toThrow(TypeError);
 }, 500);
@@ -942,7 +1024,7 @@ test('transport.updateIceServers() succeeds', async () =>
 
 test('transport.updateIceServers() without iceServers rejects with TypeError', async () =>
 {
-	await expect(sendTransport.updateIceServers())
+	await expect(sendTransport.updateIceServers({}))
 		.rejects
 		.toThrow(TypeError);
 }, 500);
@@ -980,34 +1062,40 @@ test('connection state change fires "connectionstatechange" in live Transport', 
 	expect(connectionStateChangeEventNumTimesCalled).toBe(1);
 	expect(sendTransport.connectionState).toBe('completed');
 
-	sendTransport.removeAllListeners();
+	sendTransport.removeAllListeners('connectionstatechange');
 }, 500);
 
 test('producer.pause() succeeds', () =>
 {
 	videoProducer.pause();
 	expect(videoProducer.paused).toBe(true);
+
+	// Track will be still enabled due to disableTrackOnPause: false.
+	expect(videoProducer.track.enabled).toBe(true);
 }, 500);
 
 test('producer.resume() succeeds', () =>
 {
 	videoProducer.resume();
 	expect(videoProducer.paused).toBe(false);
+	expect(videoProducer.track.enabled).toBe(true);
 }, 500);
 
-test('producer.replaceTrack() succeeds', async () =>
+test('producer.replaceTrack() with a new track succeeds', async () =>
 {
 	// Have the audio Producer paused.
 	audioProducer.pause();
 
 	const audioProducerPreviousTrack = audioProducer.track;
-	const newAudioTrack = new MediaStreamTrack({ kind: 'audio' });
+	const newAudioTrack = new FakeMediaStreamTrack({ kind: 'audio' });
 
 	await expect(audioProducer.replaceTrack({ track: newAudioTrack }))
 		.resolves
 		.toBe(undefined);
 
-	expect(audioProducerPreviousTrack.readyState).toBe('ended');
+	// Previous track must be 'live' due to stopTracks: false.
+	expect(audioProducerPreviousTrack.readyState).toBe('live');
+	expect(audioProducer.track.readyState).toBe('live');
 	expect(audioProducer.track).not.toBe(audioProducerPreviousTrack);
 	expect(audioProducer.track).toBe(newAudioTrack);
 	// Producer was already paused.
@@ -1017,29 +1105,61 @@ test('producer.replaceTrack() succeeds', async () =>
 	audioProducer.resume();
 
 	const videoProducerPreviousTrack = videoProducer.track;
-	const newVideoTrack = new MediaStreamTrack({ kind: 'video' });
+	const newVideoTrack = new FakeMediaStreamTrack({ kind: 'video' });
 
 	await expect(videoProducer.replaceTrack({ track: newVideoTrack }))
 		.resolves
 		.toBe(undefined);
 
+	// Previous track must be 'ended' due to stopTracks: true.
+	expect(videoProducerPreviousTrack.readyState).toBe('ended');
 	expect(videoProducer.track).not.toBe(videoProducerPreviousTrack);
 	expect(videoProducer.track).toBe(newVideoTrack);
 	expect(videoProducer.paused).toBe(false);
 }, 500);
 
-test('producer.replaceTrack() without track rejects with TypeError', async () =>
+test('producer.replaceTrack() with null succeeds', async () =>
 {
-	await expect(videoProducer.replaceTrack())
-		.rejects
-		.toThrow(TypeError);
+	// Have the audio Producer paused.
+	audioProducer.pause();
 
-	expect(videoProducer.track.readyState).toBe('live');
+	const audioProducerPreviousTrack = audioProducer.track;
+
+	await expect(audioProducer.replaceTrack({ track: null }))
+		.resolves
+		.toBe(undefined);
+
+	// Previous track must be 'live' due to stopTracks: false.
+	expect(audioProducerPreviousTrack.readyState).toBe('live');
+	expect(audioProducer.track).toBeNull();
+	// Producer was already paused.
+	expect(audioProducer.paused).toBe(true);
+
+	// Reset the audio paused state.
+	audioProducer.resume();
+
+	expect(audioProducer.paused).toBe(false);
+
+	// Manually "mute" the original audio track.
+	audioProducerPreviousTrack.enabled = false;
+
+	// Set the original audio track back.
+	await expect(audioProducer.replaceTrack({ track: audioProducerPreviousTrack }))
+		.resolves
+		.toBe(undefined);
+
+	// The given audio track was muted but the Producer was not, so the track
+	// must not be muted now.
+	expect(audioProducer.paused).toBe(false);
+	expect(audioProducerPreviousTrack.enabled).toBe(true);
+
+	// Reset the audio paused state.
+	audioProducer.resume();
 }, 500);
 
 test('producer.replaceTrack() with an ended track rejects with InvalidStateError', async () =>
 {
-	const track = new MediaStreamTrack({ kind: 'audio' });
+	const track = new FakeMediaStreamTrack({ kind: 'audio' });
 
 	track.stop();
 
@@ -1049,6 +1169,15 @@ test('producer.replaceTrack() with an ended track rejects with InvalidStateError
 
 	expect(track.readyState).toBe('ended');
 	expect(videoProducer.track.readyState).toBe('live');
+}, 500);
+
+test('producer.replaceTrack() with the same track succeeds', async () =>
+{
+	await expect(audioProducer.replaceTrack({ track: audioProducer.track }))
+		.resolves
+		.toBe(undefined);
+
+	expect(audioProducer.track.readyState).toBe('live');
 }, 500);
 
 test('producer.setMaxSpatialLayer() succeeds', async () =>
@@ -1081,6 +1210,15 @@ test('producer.setMaxSpatialLayer() without spatialLayer rejects with TypeError'
 	await expect(videoProducer.setMaxSpatialLayer())
 		.rejects
 		.toThrow(TypeError);
+}, 500);
+
+test('producer.setRtpEncodingParameters() succeeds', async () =>
+{
+	await expect(videoProducer.setRtpEncodingParameters({ foo: 'bar' }))
+		.resolves
+		.toBe(undefined);
+
+	expect(videoProducer.maxSpatialLayer).toBe(0);
 }, 500);
 
 test('producer.getStats() succeeds', async () =>
@@ -1145,18 +1283,19 @@ test('producer.close() succeed', () =>
 {
 	audioProducer.close();
 	expect(audioProducer.closed).toBe(true);
-	expect(audioProducer.track.readyState).toBe('ended');
+	// Track will be still 'live' due to stopTracks: false.
+	expect(audioProducer.track.readyState).toBe('live');
 }, 500);
 
 test('producer.replaceTrack() rejects with InvalidStateError if closed', async () =>
 {
-	const track = new MediaStreamTrack({ kind: 'audio' });
+	const audioTrack = new FakeMediaStreamTrack({ kind: 'audio' });
 
-	await expect(audioProducer.replaceTrack({ track }))
+	await expect(audioProducer.replaceTrack({ track: audioTrack }))
 		.rejects
 		.toThrow(InvalidStateError);
 
-	expect(track.readyState).toBe('ended');
+	expect(audioTrack.readyState).toBe('live');
 }, 500);
 
 test('producer.getStats() rejects with InvalidStateError if closed', async () =>
@@ -1296,32 +1435,45 @@ test('transport.close() fires "transportclose" in live Producers/Consumers', () 
 
 test('transport.produce() rejects with InvalidStateError if closed', async () =>
 {
-	const track = new MediaStreamTrack({ kind: 'audio' });
+	const track = new FakeMediaStreamTrack({ kind: 'audio' });
 
-	await expect(sendTransport.produce({ track }))
+	// Add noop listener to avoid the method fail.
+	sendTransport.on('produce', () => {});
+
+	await expect(sendTransport.produce({ track, stopTracks: false }))
 		.rejects
 		.toThrow(InvalidStateError);
 
-	expect(track.readyState).toBe('ended');
+	// The track must be 'live' due to stopTracks: false.
+	expect(track.readyState).toBe('live');
+
+	sendTransport.removeAllListeners('produce');
 }, 500);
 
 test('transport.consume() rejects with InvalidStateError if closed', async () =>
 {
-	await expect(recvTransport.consume())
+	await expect(recvTransport.consume({}))
 		.rejects
 		.toThrow(InvalidStateError);
+
+	recvTransport.removeAllListeners();
 }, 500);
 
 test('transport.produceData() rejects with InvalidStateError if closed', async () =>
 {
-	await expect(sendTransport.produceData())
+	// Add noop listener to avoid the method fail.
+	sendTransport.on('producedata', () => {});
+
+	await expect(sendTransport.produceData({}))
 		.rejects
 		.toThrow(InvalidStateError);
+
+	sendTransport.removeAllListeners('producedata');
 }, 500);
 
 test('transport.consumeData() rejects with InvalidStateError if closed', async () =>
 {
-	await expect(recvTransport.consumeData())
+	await expect(recvTransport.consumeData({}))
 		.rejects
 		.toThrow(InvalidStateError);
 }, 500);
@@ -1361,7 +1513,7 @@ test('connection state change does not fire "connectionstatechange" in closed Tr
 	expect(connectionStateChangeEventNumTimesCalled).toBe(0);
 	expect(sendTransport.connectionState).toBe('disconnected');
 
-	sendTransport.removeAllListeners();
+	sendTransport.removeAllListeners('connectionstatechange');
 }, 500);
 
 test('parseScalabilityMode() works', () =>
